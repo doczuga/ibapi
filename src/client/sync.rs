@@ -118,6 +118,9 @@ impl Client {
         if let Some(limiter) = config.rate_limiter {
             message_bus.set_rate_limiter(limiter);
         }
+        if let Some(tap) = config.wire_tap {
+            message_bus.set_wire_tap(tap);
+        }
 
         // Starts thread to read messages from TWS
         message_bus.process_messages()?;

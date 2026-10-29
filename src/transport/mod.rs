@@ -30,6 +30,7 @@ pub mod r#async;
 
 pub(crate) mod order_taps;
 pub(crate) mod rate_limiter;
+pub(crate) mod wire_tap;
 
 // Internal channel envelope shared across sync/async transports.
 #[cfg(any(feature = "sync", feature = "async"))]

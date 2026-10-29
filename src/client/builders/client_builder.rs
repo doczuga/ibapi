@@ -41,6 +41,7 @@ use crate::connection::common::{ConnectionConfig, StartupCallback};
 use crate::errors::Error;
 use crate::transport::common::MAX_RECONNECT_ATTEMPTS;
 use crate::transport::rate_limiter::RateLimiter;
+use crate::transport::wire_tap::SharedWireTap;
 
 /// Configuration state shared by [`sync_impl::ClientBuilder`] and
 /// [`async_impl::ClientBuilder`]. Centralizes the field set and the
@@ -58,6 +59,8 @@ pub(super) struct BuilderState {
     pub(super) rate_limiter: Option<RateLimiter>,
     /// `None` (the default) leaves request-id one-shots unbounded.
     pub(super) one_shot_timeout: Option<Duration>,
+    /// `None` (the default) taps nothing.
+    pub(super) wire_tap: Option<SharedWireTap>,
 }
 
 impl Default for BuilderState {
@@ -70,6 +73,7 @@ impl Default for BuilderState {
             max_reconnect_attempts: Some(MAX_RECONNECT_ATTEMPTS),
             rate_limiter: None,
             one_shot_timeout: None,
+            wire_tap: None,
         }
     }
 }
@@ -80,6 +84,7 @@ pub(crate) struct ClientConfig {
     pub(crate) connection: ConnectionConfig,
     pub(crate) rate_limiter: Option<RateLimiter>,
     pub(crate) one_shot_timeout: Option<Duration>,
+    pub(crate) wire_tap: Option<SharedWireTap>,
 }
 
 impl BuilderState {
@@ -106,6 +111,7 @@ impl BuilderState {
             },
             rate_limiter: self.rate_limiter,
             one_shot_timeout: self.one_shot_timeout,
+            wire_tap: self.wire_tap,
         })
     }
 }
@@ -124,6 +130,7 @@ pub mod sync_impl {
     use crate::subscriptions::notice_stream::sync_impl::NoticeStream;
     use crate::transport::rate_limiter::RateLimiter;
     use crate::transport::sync::NoticeBroadcaster;
+    use crate::transport::wire_tap::{SharedWireTap, WireTap};
 
     /// Builder for a synchronous [`Client`]. Acquire via
     /// [`Client::builder`](crate::client::blocking::Client::builder).
@@ -234,6 +241,13 @@ pub mod sync_impl {
         /// ```
         pub fn rate_limiter(mut self, limiter: RateLimiter) -> Self {
             self.state.rate_limiter = Some(limiter);
+            self
+        }
+
+        /// Tell `tap` of every frame the client writes to TWS: see [`WireTap`] for which
+        /// frames those are. Default: none.
+        pub fn wire_tap(mut self, tap: Arc<dyn WireTap>) -> Self {
+            self.state.wire_tap = Some(SharedWireTap::new(tap));
             self
         }
 
@@ -373,6 +387,7 @@ pub mod async_impl {
     use crate::subscriptions::notice_stream::async_impl::NoticeStream;
     use crate::transport::r#async::BROADCAST_CHANNEL_CAPACITY;
     use crate::transport::rate_limiter::RateLimiter;
+    use crate::transport::wire_tap::{SharedWireTap, WireTap};
 
     /// Builder for an async [`Client`]. Acquire via
     /// [`Client::builder`](crate::Client::builder).
@@ -530,6 +545,13 @@ pub mod async_impl {
         /// ```
         pub fn rate_limiter(mut self, limiter: RateLimiter) -> Self {
             self.state.rate_limiter = Some(limiter);
+            self
+        }
+
+        /// Tell `tap` of every frame the client writes to TWS: see [`WireTap`] for which
+        /// frames those are. Default: none.
+        pub fn wire_tap(mut self, tap: Arc<dyn WireTap>) -> Self {
+            self.state.wire_tap = Some(SharedWireTap::new(tap));
             self
         }
 
