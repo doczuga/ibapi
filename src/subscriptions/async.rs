@@ -658,6 +658,16 @@ impl<T: StreamDecoder<T>> Subscription<T> {
 
 #[allow(private_bounds)]
 impl<T: StreamDecoder<T>> Subscription<T> {
+    /// Whether [`cancel`](Self::cancel) would write a cancel to TWS now: false once the
+    /// subscription is cancelled, once the request has finished (end marker, snapshot end,
+    /// or a TWS error its type knows ends the request), or if its type has no cancel. For a
+    /// shared stream it is true even while other holders keep the stream open, in which
+    /// case the cancel writes nothing. For callers that pace their frames: true means
+    /// reserve one for the cancel.
+    pub fn cancel_writes(&self) -> bool {
+        !self.request.cancelled.load(Ordering::Relaxed) && self.request.pending_cancel(self.request.id()).is_some()
+    }
+
     /// Whether the stream ended with TWS's end marker, as opposed to an
     /// error or a closed channel (both of which also end the stream).
     pub(crate) fn ended_natively(&self) -> bool {
