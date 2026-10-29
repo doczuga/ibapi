@@ -7,10 +7,14 @@ use crate::messages::OutgoingMessages;
 
 /// Told of every frame the client writes to TWS, once the write has succeeded.
 ///
-/// Every request, cancel and order the client sends passes through it, including those
-/// the client sends on its own: the cancel when a subscription is dropped, and the
-/// market-data type it re-sends after a reconnect. The connection handshake, written
-/// before the client exists, is not. Install one with `ClientBuilder::wire_tap`.
+/// Every request, cancel and order the client sends through its message bus passes
+/// through it, including those it sends on its own, such as the cancel when a subscription
+/// is dropped. Frames the connection writes itself are not seen: the handshake, and what a
+/// reconnect replays (the handshake again, and the market-data type). Install one with
+/// `ClientBuilder::wire_tap`.
+///
+/// `kind` names the message, not its arguments: a cancel sent as a request with a flag
+/// (`RequestAccountData` with `subscribe = false`) arrives as that request's kind.
 ///
 /// It is called on the path that writes to the socket, so it must be quick and must not
 /// block: count, do not log.
