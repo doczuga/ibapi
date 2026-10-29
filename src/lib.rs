@@ -228,6 +228,9 @@ pub use client::ClientBuilder;
 #[doc(inline)]
 pub use transport::rate_limiter::RateLimiter;
 
+#[doc(inline)]
+pub use transport::wire_tap::WireTap;
+
 pub(crate) use messages::{encode_option_field, ToField};
 
 #[doc(inline)]

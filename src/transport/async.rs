@@ -34,7 +34,9 @@ use crate::accounts::types::AccountId;
 use crate::client::handshake_state::HandshakeState;
 use crate::client::ids::{OrderId, RequestId, WireId};
 use crate::connection::r#async::AsyncConnection;
-use crate::messages::{is_cancel_frame, transport_reconnect_notice, IncomingMessages, Notice, OutgoingMessages, ResponseMessage};
+use crate::messages::{
+    is_cancel_frame, outgoing_message_type, transport_reconnect_notice, IncomingMessages, Notice, OutgoingMessages, ResponseMessage,
+};
 use crate::Error;
 
 use super::common::{lock, log_orphan, report_unroutable_frame, Lease, LeaseRef};
@@ -44,6 +46,7 @@ use super::routing::{
     classify_error, determine_routing, is_foreign, order_routing_strategy, order_update_notice, DecodedError, ErrorDisposition, OrderRoutingStrategy,
     RoutingDecision,
 };
+use super::wire_tap::SharedWireTap;
 use super::{BufferBound, RoutedItem, SharedTicket};
 
 /// Default capacity for broadcast channels. Market-data channels take the
@@ -525,6 +528,9 @@ pub struct AsyncTcpMessageBus<S: AsyncStream = AsyncTcpSocket> {
     /// Outbound rate limiter, if the client was built with one. Installed
     /// once via [`Self::set_rate_limiter`] before any request is sent.
     rate_limiter: OnceLock<RateLimiter>,
+    /// Told of every frame written, if the client was built with a tap. Installed once via
+    /// [`Self::set_wire_tap`] before any request is sent.
+    wire_tap: OnceLock<SharedWireTap>,
     /// Session state, and what `wait_connected` awaits.
     connection_state: Arc<ConnectionSignal>,
 }
@@ -575,6 +581,7 @@ impl<S: AsyncStream> AsyncTcpMessageBus<S> {
             handshake_state: OnceLock::new(),
             session_generation: AtomicU64::new(0),
             rate_limiter: OnceLock::new(),
+            wire_tap: OnceLock::new(),
             connection_state: Arc::new(ConnectionSignal::default()),
         };
 
@@ -633,6 +640,20 @@ impl<S: AsyncStream> AsyncTcpMessageBus<S> {
     /// client sends anything.
     pub(crate) fn set_rate_limiter(&self, limiter: RateLimiter) {
         self.rate_limiter.set(limiter).expect("rate limiter installed twice");
+    }
+
+    /// Installs the wire tap. Called at most once, before the client sends anything.
+    pub(crate) fn set_wire_tap(&self, tap: SharedWireTap) {
+        if self.wire_tap.set(tap).is_err() {
+            panic!("wire tap installed twice");
+        }
+    }
+
+    /// Tells the wire tap, if any, of a frame just written.
+    fn tap(&self, message: &[u8]) {
+        if let Some(tap) = self.wire_tap.get() {
+            tap.frame_written(outgoing_message_type(message));
+        }
     }
 
     /// Start processing messages from TWS
@@ -828,7 +849,9 @@ impl<S: AsyncStream> AsyncTcpMessageBus<S> {
     /// Writes without throttling; the connected check runs after any wait.
     async fn write_now(&self, message: &[u8]) -> Result<(), Error> {
         self.ensure_connected()?;
-        self.connection.write_message(message).await
+        self.connection.write_message(message).await?;
+        self.tap(message);
+        Ok(())
     }
 
     /// Fail all registered channels with `Error::ConnectionReset`, before a

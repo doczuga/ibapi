@@ -26,11 +26,13 @@ use super::routing::{
     classify_error, determine_routing, is_foreign, order_routing_strategy, order_update_notice, DecodedError, ErrorDisposition, OrderRoutingStrategy,
     RoutingDecision,
 };
+use super::wire_tap::SharedWireTap;
 use super::{
     Admit, BoundState, BufferBound, InternalSubscription, MessageBus, Response, RoutedItem, SharedCounts, SharedTicket, Signal, SubscriptionBuilder,
 };
 use crate::messages::{
-    is_cancel_frame, shared_channel_configuration, transport_reconnect_notice, IncomingMessages, Notice, OutgoingMessages, ResponseMessage,
+    is_cancel_frame, outgoing_message_type, shared_channel_configuration, transport_reconnect_notice, IncomingMessages, Notice, OutgoingMessages,
+    ResponseMessage,
 };
 use crate::subscriptions::notice_stream::sync_impl::NoticeStream;
 use crate::Error;
@@ -331,6 +333,9 @@ pub struct TcpMessageBus<S: Stream> {
     /// Outbound rate limiter, if the client was built with one. Installed
     /// once via [`Self::set_rate_limiter`] before any request is sent.
     rate_limiter: OnceLock<RateLimiter>,
+    /// Told of every frame written, if the client was built with a tap. Installed once via
+    /// [`Self::set_wire_tap`] before any request is sent.
+    wire_tap: OnceLock<SharedWireTap>,
     /// The order-update stream and the per-order status streams.
     order_taps: OrderTaps<Sender<RoutedItem>>,
     /// Session state, and what `wait_connected` blocks on.
@@ -359,6 +364,7 @@ impl<S: Stream> TcpMessageBus<S> {
             handshake_state: OnceLock::new(),
             session_generation: AtomicU64::new(0),
             rate_limiter: OnceLock::new(),
+            wire_tap: OnceLock::new(),
             order_taps,
             connection_state: ConnectionSignal::default(),
         }
@@ -374,6 +380,20 @@ impl<S: Stream> TcpMessageBus<S> {
     /// client sends anything.
     pub(crate) fn set_rate_limiter(&self, limiter: RateLimiter) {
         self.rate_limiter.set(limiter).expect("rate limiter installed twice");
+    }
+
+    /// Installs the wire tap. Called at most once, before the client sends anything.
+    pub(crate) fn set_wire_tap(&self, tap: SharedWireTap) {
+        if self.wire_tap.set(tap).is_err() {
+            panic!("wire tap installed twice");
+        }
+    }
+
+    /// Tells the wire tap, if any, of a frame just written.
+    fn tap(&self, message: &[u8]) {
+        if let Some(tap) = self.wire_tap.get() {
+            tap.frame_written(outgoing_message_type(message));
+        }
     }
 
     fn is_shutting_down(&self) -> bool {
@@ -461,7 +481,9 @@ impl<S: Stream> TcpMessageBus<S> {
     /// Writes without throttling; the connected check runs after any wait.
     fn write_now(&self, message: &[u8]) -> Result<(), Error> {
         self.ensure_connected()?;
-        self.connection.write_message(message)
+        self.connection.write_message(message)?;
+        self.tap(message);
+        Ok(())
     }
 
     fn reset(&self) {
