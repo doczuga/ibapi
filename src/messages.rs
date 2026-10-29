@@ -703,7 +703,7 @@ impl OutgoingMessages {
     /// Cancels that reuse a request id with a flag, such as
     /// `RequestAccountData` with `subscribe = false`, are not recognized and
     /// wait like requests: slower, never over the limit.
-    pub(crate) fn is_cancel(self) -> bool {
+    pub fn is_cancel(self) -> bool {
         match self {
             OutgoingMessages::CancelMarketData
             | OutgoingMessages::CancelOrder
