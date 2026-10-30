@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Client::resubscribing(open)` (sync and async) streams a subscription across transport reconnects: on a lost connection it waits for the reconnect, calls `open` again, and yields a `TRANSPORT_RECONNECT_CODE` notice before the new subscription's first item. It accepts only `subscriptions::Resubscribable` item types (market data, account, position, PnL, scanner, news bulletins), so an order request can't be re-sent. `examples/sync/stream_retry.rs` uses it, with a new async twin (#1122).
+
+### Fixed
+
+- Code 165 "HMDS server connection was successful", which TWS binds to a historical request when the HMDS farm connects on demand, no longer ends the request as an error. It's now a `NoticeCategory::Warning` (`Notice::is_warning()` is true; logged at info): a stream yields it as a notice and keeps going, and a one-shot fetch skips it and returns the bars that follow. Other 165 texts are unchanged (#1136).
+
 ## [5.4.0] - 2026-10-27
 
 ### Added
